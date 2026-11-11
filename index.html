@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14231d">
+<title>Chess Arena</title>
+<script>
+/* ==================================================================
+   SETTINGS: edit this block only.
+   Supabase dashboard > Project Settings > API gives you both values.
+   ================================================================== */
+const CONFIG = {
+  SUPABASE_URL: "",            // e.g. "https://abcdefgh.supabase.co"
+  SUPABASE_KEY: "",            // the "anon" / "publishable" key (safe to put in a public page)
+  APP_NAME: "Chess Arena",
+  START_DELAY_SEC: 30,         // seconds between pairing a round and the clocks starting
+  BREAK_SEC: 60,               // pause before the next round when "run rounds automatically" is on
+  SNAPSHOT_SEC: 120,           // webcam snapshot interval per player
+  ENGINE_DEPTH: 12,            // engine check depth (higher = slower, a little more accurate)
+  FAIRPLAY_THRESHOLD: 60       // suspicion score (0-100) that opens a case for the arbiter
+};
+</script>
+<style>
+:root { --bg:#f4f2ec; --card:#fff; --ink:#17211c; --muted:#66706a; --line:#dfdcd2; --brand:#14231d; --accent:#1d6b4f; --danger:#b3261e;
+  --sq-light:#ecebd9; --sq-dark:#6d8f72; --sel:rgba(246,201,14,.55); --last:rgba(246,201,14,.38); --radius:10px; }
+* { box-sizing:border-box; } html, body { margin:0; }
+body { background:var(--bg); color:var(--ink); font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-text-size-adjust:100%; }
+a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+h1 { font-size:1.5rem; margin:0 0 .25rem; letter-spacing:-.01em; } h2 { font-size:1.05rem; margin:0 0 .75rem; }
+.muted { color:var(--muted); } .small { font-size:.85rem; } .right { text-align:right; } .center { text-align:center; } .num { font-variant-numeric:tabular-nums; }
+.top { background:var(--brand); color:#fff; padding:.7rem 1rem; display:flex; align-items:center; gap:1rem; position:sticky; top:0; z-index:5; }
+.top .logo { font-weight:700; color:#fff; display:flex; align-items:center; gap:.5rem; } .top .logo img { width:26px; height:26px; }
+.top nav { margin-left:auto; display:flex; gap:1rem; align-items:center; font-size:.9rem; } .top nav a { color:#d6e4dc; }
+.wrap { max-width:1060px; margin:0 auto; padding:1.1rem 1rem 3rem; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:1.1rem; margin-bottom:1rem; }
+.row { display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; } .spread { justify-content:space-between; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; } @media (max-width:560px) { .grid2 { grid-template-columns:1fr; } }
+label { display:block; font-size:.82rem; color:var(--muted); margin-bottom:.25rem; }
+input, select, textarea { width:100%; font:inherit; padding:.65rem .75rem; border:1px solid #c9c5b8; border-radius:8px; background:#fff; color:var(--ink); }
+input[type=checkbox] { width:auto; }
+input:focus, select:focus, textarea:focus, button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.btn { font:inherit; font-weight:600; border:1px solid transparent; border-radius:8px; padding:.62rem 1rem; cursor:pointer; background:var(--accent); color:#fff; display:inline-block; }
+.btn:hover { text-decoration:none; } .btn:disabled { opacity:.5; cursor:default; }
+.btn.ghost { background:#fff; color:var(--ink); border-color:#c9c5b8; } .btn.danger { background:var(--danger); }
+.btn.sm { padding:.3rem .6rem; font-size:.82rem; } .btn.block { width:100%; }
+.err { color:var(--danger); font-size:.9rem; min-height:1.3em; margin:.4rem 0 0; }
+.login { min-height:100vh; display:grid; place-items:center; padding:1rem; background:linear-gradient(160deg,#14231d 0 46%,var(--bg) 46%); }
+.login .card { width:100%; max-width:380px; padding:1.6rem; box-shadow:0 12px 40px rgba(0,0,0,.18); }
+.login .brand { text-align:center; margin-bottom:1.2rem; } .login .brand img { width:54px; height:54px; }
+.seg { display:grid; grid-template-columns:1fr 1fr; background:#ebe8de; border-radius:8px; padding:3px; margin-bottom:1rem; }
+.seg button { font:inherit; border:0; background:none; padding:.45rem; border-radius:6px; cursor:pointer; color:var(--muted); } .seg button.on { background:#fff; color:var(--ink); font-weight:600; }
+.pill { display:inline-block; font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:.15rem .5rem; border-radius:99px; background:#e8e5da; color:#4d564f; }
+.pill.live { background:#d9efe3; color:#135a3f; } .pill.done { background:#e6e6e6; color:#555; } .pill.bad { background:#f7dcd9; color:var(--danger); }
+.t-card { display:block; color:inherit; } .t-card:hover { text-decoration:none; border-color:var(--accent); }
+.meta { display:flex; gap:1.1rem; flex-wrap:wrap; color:var(--muted); font-size:.88rem; margin-top:.35rem; }
+.banner { background:#14231d; color:#fff; border-radius:var(--radius); padding:.9rem 1rem; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+.banner .btn { background:#fff; color:#14231d; }
+.tabs { display:flex; gap:.25rem; border-bottom:1px solid var(--line); margin-bottom:.8rem; overflow-x:auto; }
+.tabs button { font:inherit; background:none; border:0; border-bottom:3px solid transparent; padding:.55rem .8rem; cursor:pointer; color:var(--muted); white-space:nowrap; }
+.tabs button.on { color:var(--ink); border-color:var(--accent); font-weight:600; }
+.tablewrap { overflow-x:auto; } table { width:100%; border-collapse:collapse; font-size:.92rem; }
+th { text-align:left; font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; }
+th, td { padding:.5rem; border-bottom:1px solid #ece9df; white-space:nowrap; } td.name { white-space:normal; min-width:9rem; }
+.title { color:#a14a00; font-weight:700; font-size:.8em; margin-right:.3em; }
+tr.dq td { color:#999; text-decoration:line-through; } tr.dq td:last-child { text-decoration:none; } tr.me td { background:#f3f8f5; }
+.game { display:grid; grid-template-columns:minmax(0,560px) minmax(260px,1fr); gap:1rem; align-items:start; }
+@media (max-width:860px) { .game { grid-template-columns:1fr; } .wrap.g { padding:.5rem .5rem 2rem; } }
+.board { position:relative; width:100%; aspect-ratio:1; display:grid; grid-template:repeat(8,1fr)/repeat(8,1fr); border-radius:6px; overflow:hidden; user-select:none; touch-action:none; box-shadow:0 2px 10px rgba(0,0,0,.15); }
+.sq { position:relative; } .sq.l { background:var(--sq-light); } .sq.d { background:var(--sq-dark); }
+.sq.last::before, .sq.sel::before { content:""; position:absolute; inset:0; background:var(--last); } .sq.sel::before { background:var(--sel); }
+.sq.chk { background:radial-gradient(circle,#e2493b 0 35%,transparent 80%),var(--sq-dark); } .sq.l.chk { background:radial-gradient(circle,#e2493b 0 35%,transparent 80%),var(--sq-light); }
+.sq.tgt::after { content:""; position:absolute; inset:36%; border-radius:50%; background:rgba(20,35,29,.32); }
+.sq.tgt.occ::after { inset:4%; background:none; border:5px solid rgba(20,35,29,.32); }
+.sq img { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.sq .co { position:absolute; font-size:.62rem; font-weight:700; opacity:.7; pointer-events:none; } .sq .co.f { right:3px; bottom:1px; } .sq .co.r { left:3px; top:1px; }
+.sq.l .co { color:var(--sq-dark); } .sq.d .co { color:var(--sq-light); }
+.drag { position:fixed; pointer-events:none; z-index:50; transform:translate(-50%,-50%); }
+.promo { position:absolute; inset:0; background:rgba(0,0,0,.45); display:grid; place-items:center; z-index:3; }
+.promo div { background:#fff; border-radius:10px; padding:.4rem; display:flex; } .promo img { width:64px; height:64px; cursor:pointer; }
+.strip { display:flex; align-items:center; justify-content:space-between; gap:.6rem; padding:.45rem .15rem; }
+.strip .who { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.clock { font:700 1.5rem/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace; padding:.35rem .6rem; border-radius:6px; background:#e4e1d6; color:#555; font-variant-numeric:tabular-nums; }
+.clock.run { background:var(--brand); color:#fff; } .clock.low { background:var(--danger); color:#fff; }
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#bbb; margin-right:.35rem; } .dot.ok { background:#2e9e6b; } .dot.bad { background:var(--danger); }
+.moves { max-height:250px; overflow-y:auto; display:grid; grid-template-columns:2.4rem 1fr 1fr; font-size:.92rem; font-variant-numeric:tabular-nums; }
+.moves span { padding:.16rem .4rem; } .moves .n { color:var(--muted); } .moves .mv { cursor:pointer; border-radius:4px; } .moves .cur { background:#e4efe9; font-weight:600; }
+.result { background:#14231d; color:#fff; border-radius:8px; padding:.8rem 1rem; margin-bottom:.8rem; }
+.proctor video { width:112px; height:84px; object-fit:cover; border-radius:6px; background:#111; transform:scaleX(-1); }
+.gate { position:absolute; inset:0; background:rgba(20,35,29,.9); color:#fff; z-index:4; display:grid; place-items:center; padding:1.2rem; text-align:center; }
+.gate .btn { background:#fff; color:#14231d; } .gate ul { text-align:left; font-size:.88rem; margin:.6rem auto; max-width:22rem; padding-left:1.1rem; }
+#modal { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100; display:grid; place-items:center; padding:1rem; }
+#modal[hidden], #toast[hidden] { display:none; }
+#modal .box { background:#fff; border-radius:12px; padding:1.4rem; max-width:460px; width:100%; } #modal .box.red { border-top:6px solid var(--danger); }
+#toast { position:fixed; left:50%; bottom:1.2rem; transform:translateX(-50%); background:#14231d; color:#fff; padding:.6rem 1rem; border-radius:8px; z-index:110; max-width:90vw; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:.75rem; }
+.stat { background:#f6f4ee; border-radius:8px; padding:.7rem .8rem; } .stat b { display:block; font-size:1.4rem; font-variant-numeric:tabular-nums; }
+.snaps { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:.5rem; }
+.snaps figure { margin:0; font-size:.72rem; color:var(--muted); } .snaps img { width:100%; border-radius:6px; display:block; background:#111; aspect-ratio:4/3; object-fit:cover; }
+.snaps figure.flag img { outline:3px solid var(--danger); }
+.score { font:700 1.6rem/1 system-ui; padding:.5rem .7rem; border-radius:8px; background:#f7dcd9; color:var(--danger); }
+</style>
+</head>
+<body>
+<div id="app"><p style="padding:2rem;font-family:system-ui">Loading…</p></div>
+<div id="modal" hidden></div>
+<div id="toast" hidden></div>
+<script type="module">
+const CDN = 'https://cdn.jsdelivr.net/npm/';
+const PIECE = {"bb": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxnIGZpbGw9IiMwMDAiIHN0cm9rZS1saW5lY2FwPSJidXR0Ij48cGF0aCBkPSJNOSAzNmMzLjM5LS45NyAxMC4xMS40MyAxMy41LTIgMy4zOSAyLjQzIDEwLjExIDEuMDMgMTMuNSAyIDAgMCAxLjY1LjU0IDMgMi0uNjguOTctMS42NS45OS0zIC41LTMuMzktLjk3LTEwLjExLjQ2LTEzLjUtMS0zLjM5IDEuNDYtMTAuMTEuMDMtMTMuNSAxLTEuMzU0LjQ5LTIuMzIzLjQ3LTMtLjUgMS4zNTQtMS45NCAzLTIgMy0yeiIvPjxwYXRoIGQ9Ik0xNSAzMmMyLjUgMi41IDEyLjUgMi41IDE1IDAgLjUtMS41IDAtMiAwLTIgMC0yLjUtMi41LTQtMi41LTQgNS41LTEuNSA2LTExLjUtNS0xNS41LTExIDQtMTAuNSAxNC01IDE1LjUgMCAwLTIuNSAxLjUtMi41IDQgMCAwLS41LjUgMCAyeiIvPjxwYXRoIGQ9Ik0yNSA4YTIuNSAyLjUgMCAxIDEtNSAwIDIuNSAyLjUgMCAxIDEgNSAweiIvPjwvZz48cGF0aCBkPSJNMTcuNSAyNmgxME0xNSAzMGgxNW0tNy41LTE0LjV2NU0yMCAxOGg1IiBzdHJva2U9IiNlY2VjZWMiIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiLz48L2c+PC9zdmc+", "bk": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0yMi41IDExLjYzVjYiIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiLz48cGF0aCBkPSJNMjIuNSAyNXM0LjUtNy41IDMtMTAuNWMwIDAtMS0yLjUtMy0yLjVzLTMgMi41LTMgMi41Yy0xLjUgMyAzIDEwLjUgMyAxMC41IiBmaWxsPSIjMDAwIiBzdHJva2UtbGluZWNhcD0iYnV0dCIgc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIvPjxwYXRoIGQ9Ik0xMS41IDM3YzUuNSAzLjUgMTUuNSAzLjUgMjEgMHYtN3M5LTQuNSA2LTEwLjVjLTQtNi41LTEzLjUtMy41LTE2IDRWMjd2LTMuNWMtMy41LTcuNS0xMy0xMC41LTE2LTQtMyA2IDUgMTAgNSAxMFYzN3oiIGZpbGw9IiMwMDAiLz48cGF0aCBkPSJNMjAgOGg1IiBzdHJva2UtbGluZWpvaW49Im1pdGVyIi8+PHBhdGggZD0iTTMyIDI5LjVzOC41LTQgNi4wMy05LjY1QzM0LjE1IDE0IDI1IDE4IDIyLjUgMjQuNWwuMDEgMi4xLS4wMS0yLjFDMjAgMTggOS45MDYgMTQgNi45OTcgMTkuODVjLTIuNDk3IDUuNjUgNC44NTMgOSA0Ljg1MyA5IiBzdHJva2U9IiNlY2VjZWMiLz48cGF0aCBkPSJNMTEuNSAzMGM1LjUtMyAxNS41LTMgMjEgMG0tMjEgMy41YzUuNS0zIDE1LjUtMyAyMSAwbS0yMSAzLjVjNS41LTMgMTUuNS0zIDIxIDAiIHN0cm9rZT0iI2VjZWNlYyIvPjwvZz48L3N2Zz4=", "bn": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0yMiAxMGMxMC41IDEgMTYuNSA4IDE2IDI5SDE1YzAtOSAxMC02LjUgOC0yMSIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yNCAxOGMuMzggMi45MS01LjU1IDcuMzctOCA5LTMgMi0yLjgyIDQuMzQtNSA0LTEuMDQyLS45NCAxLjQxLTMuMDQgMC0zLTEgMCAuMTkgMS4yMy0xIDItMSAwLTQuMDAzIDEtNC00IDAtMiA2LTEyIDYtMTJzMS44OS0xLjkgMi0zLjVjLS43My0uOTk0LS41LTItLjUtMyAxLTEgMyAyLjUgMyAyLjVoMnMuNzgtMS45OTIgMi41LTNjMSAwIDEgMyAxIDMiIGZpbGw9IiMwMDAiLz48cGF0aCBkPSJNOS41IDI1LjVhLjUuNSAwIDEgMS0xIDAgLjUuNSAwIDEgMSAxIDB6bTUuNDMzLTkuNzVhLjUgMS41IDMwIDEgMS0uODY2LS41LjUgMS41IDMwIDEgMSAuODY2LjV6IiBmaWxsPSIjZWNlY2VjIiBzdHJva2U9IiNlY2VjZWMiLz48cGF0aCBkPSJNMjQuNTUgMTAuNGwtLjQ1IDEuNDUuNS4xNWMzLjE1IDEgNS42NSAyLjQ5IDcuOSA2Ljc1UzM1Ljc1IDI5LjA2IDM1LjI1IDM5bC0uMDUuNWgyLjI1bC4wNS0uNWMuNS0xMC4wNi0uODgtMTYuODUtMy4yNS0yMS4zNC0yLjM3LTQuNDktNS43OS02LjY0LTkuMTktNy4xNmwtLjUxLS4xeiIgZmlsbD0iI2VjZWNlYyIgc3Ryb2tlPSJub25lIi8+PC9nPjwvc3ZnPg==", "bp": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PHBhdGggZD0iTTIyLjUgOWMtMi4yMSAwLTQgMS43OS00IDQgMCAuODkuMjkgMS43MS43OCAyLjM4QzE3LjMzIDE2LjUgMTYgMTguNTkgMTYgMjFjMCAyLjAzLjk0IDMuODQgMi40MSA1LjAzLTMgMS4wNi03LjQxIDUuNTUtNy40MSAxMy40N2gyM2MwLTcuOTItNC40MS0xMi40MS03LjQxLTEzLjQ3IDEuNDctMS4xOSAyLjQxLTMgMi40MS01LjAzIDAtMi40MS0xLjMzLTQuNS0zLjI4LTUuNjIuNDktLjY3Ljc4LTEuNDkuNzgtMi4zOCAwLTIuMjEtMS43OS00LTQtNHoiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg==", "bq": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxnIHN0cm9rZT0ibm9uZSI+PGNpcmNsZSBjeD0iNiIgY3k9IjEyIiByPSIyLjc1Ii8+PGNpcmNsZSBjeD0iMTQiIGN5PSI5IiByPSIyLjc1Ii8+PGNpcmNsZSBjeD0iMjIuNSIgY3k9IjgiIHI9IjIuNzUiLz48Y2lyY2xlIGN4PSIzMSIgY3k9IjkiIHI9IjIuNzUiLz48Y2lyY2xlIGN4PSIzOSIgY3k9IjEyIiByPSIyLjc1Ii8+PC9nPjxwYXRoIGQ9Ik05IDI2YzguNS0xLjUgMjEtMS41IDI3IDBsMi41LTEyLjVMMzEgMjVsLS4zLTE0LjEtNS4yIDEzLjYtMy0xNC41LTMgMTQuNS01LjItMTMuNkwxNCAyNSA2LjUgMTMuNSA5IDI2eiIgc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiLz48cGF0aCBkPSJNOSAyNmMwIDIgMS41IDIgMi41IDQgMSAxLjUgMSAxIC41IDMuNS0xLjUgMS0xLjUgMi41LTEuNSAyLjUtMS41IDEuNS41IDIuNS41IDIuNSA2LjUgMSAxNi41IDEgMjMgMCAwIDAgMS41LTEgMC0yLjUgMCAwIC41LTEuNS0xLTIuNS0uNS0yLjUtLjUtMiAuNS0zLjUgMS0yIDIuNS0yIDIuNS00LTguNS0xLjUtMTguNS0xLjUtMjcgMHoiIHN0cm9rZS1saW5lY2FwPSJidXR0Ii8+PHBhdGggZD0iTTExIDM4LjVhMzUgMzUgMSAwIDAgMjMgMCIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiLz48cGF0aCBkPSJNMTEgMjlhMzUgMzUgMSAwIDEgMjMgMG0tMjEuNSAyLjVoMjBtLTIxIDNhMzUgMzUgMSAwIDAgMjIgMG0tMjMgM2EzNSAzNSAxIDAgMCAyNCAwIiBmaWxsPSJub25lIiBzdHJva2U9IiNlY2VjZWMiLz48L2c+PC9zdmc+", "br": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik05IDM5aDI3di0zSDl2M3ptMy41LTdsMS41LTIuNWgxN2wxLjUgMi41aC0yMHptLS41IDR2LTRoMjF2NEgxMnoiIHN0cm9rZS1saW5lY2FwPSJidXR0Ii8+PHBhdGggZD0iTTE0IDI5LjV2LTEzaDE3djEzSDE0eiIgc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiLz48cGF0aCBkPSJNMTQgMTYuNUwxMSAxNGgyM2wtMyAyLjVIMTR6TTExIDE0VjloNHYyaDVWOWg1djJoNVY5aDR2NUgxMXoiIHN0cm9rZS1saW5lY2FwPSJidXR0Ii8+PHBhdGggZD0iTTEyIDM1LjVoMjFtLTIwLTRoMTltLTE4LTJoMTdtLTE3LTEzaDE3TTExIDE0aDIzIiBmaWxsPSJub25lIiBzdHJva2U9IiNlY2VjZWMiIHN0cm9rZS13aWR0aD0iMSIgc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIvPjwvZz48L3N2Zz4=", "wb": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxnIGZpbGw9IiNmZmYiIHN0cm9rZS1saW5lY2FwPSJidXR0Ij48cGF0aCBkPSJNOSAzNmMzLjM5LS45NyAxMC4xMS40MyAxMy41LTIgMy4zOSAyLjQzIDEwLjExIDEuMDMgMTMuNSAyIDAgMCAxLjY1LjU0IDMgMi0uNjguOTctMS42NS45OS0zIC41LTMuMzktLjk3LTEwLjExLjQ2LTEzLjUtMS0zLjM5IDEuNDYtMTAuMTEuMDMtMTMuNSAxLTEuMzU0LjQ5LTIuMzIzLjQ3LTMtLjUgMS4zNTQtMS45NCAzLTIgMy0yeiIvPjxwYXRoIGQ9Ik0xNSAzMmMyLjUgMi41IDEyLjUgMi41IDE1IDAgLjUtMS41IDAtMiAwLTIgMC0yLjUtMi41LTQtMi41LTQgNS41LTEuNSA2LTExLjUtNS0xNS41LTExIDQtMTAuNSAxNC01IDE1LjUgMCAwLTIuNSAxLjUtMi41IDQgMCAwLS41LjUgMCAyeiIvPjxwYXRoIGQ9Ik0yNSA4YTIuNSAyLjUgMCAxIDEtNSAwIDIuNSAyLjUgMCAxIDEgNSAweiIvPjwvZz48cGF0aCBkPSJNMTcuNSAyNmgxME0xNSAzMGgxNW0tNy41LTE0LjV2NU0yMCAxOGg1IiBzdHJva2UtbGluZWpvaW49Im1pdGVyIi8+PC9nPjwvc3ZnPg==", "wk": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0yMi41IDExLjYzVjZNMjAgOGg1IiBzdHJva2UtbGluZWpvaW49Im1pdGVyIi8+PHBhdGggZD0iTTIyLjUgMjVzNC41LTcuNSAzLTEwLjVjMCAwLTEtMi41LTMtMi41cy0zIDIuNS0zIDIuNWMtMS41IDMgMyAxMC41IDMgMTAuNSIgZmlsbD0iI2ZmZiIgc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiLz48cGF0aCBkPSJNMTEuNSAzN2M1LjUgMy41IDE1LjUgMy41IDIxIDB2LTdzOS00LjUgNi0xMC41Yy00LTYuNS0xMy41LTMuNS0xNiA0VjI3di0zLjVjLTMuNS03LjUtMTMtMTAuNS0xNi00LTMgNiA1IDEwIDUgMTBWMzd6IiBmaWxsPSIjZmZmIi8+PHBhdGggZD0iTTExLjUgMzBjNS41LTMgMTUuNS0zIDIxIDBtLTIxIDMuNWM1LjUtMyAxNS41LTMgMjEgMG0tMjEgMy41YzUuNS0zIDE1LjUtMyAyMSAwIi8+PC9nPjwvc3ZnPg==", "wn": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0yMiAxMGMxMC41IDEgMTYuNSA4IDE2IDI5SDE1YzAtOSAxMC02LjUgOC0yMSIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik0yNCAxOGMuMzggMi45MS01LjU1IDcuMzctOCA5LTMgMi0yLjgyIDQuMzQtNSA0LTEuMDQyLS45NCAxLjQxLTMuMDQgMC0zLTEgMCAuMTkgMS4yMy0xIDItMSAwLTQuMDAzIDEtNC00IDAtMiA2LTEyIDYtMTJzMS44OS0xLjkgMi0zLjVjLS43My0uOTk0LS41LTItLjUtMyAxLTEgMyAyLjUgMyAyLjVoMnMuNzgtMS45OTIgMi41LTNjMSAwIDEgMyAxIDMiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNOS41IDI1LjVhLjUuNSAwIDEgMS0xIDAgLjUuNSAwIDEgMSAxIDB6bTUuNDMzLTkuNzVhLjUgMS41IDMwIDEgMS0uODY2LS41LjUgMS41IDMwIDEgMSAuODY2LjV6IiBmaWxsPSIjMDAwIi8+PC9nPjwvc3ZnPg==", "wp": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PHBhdGggZD0iTTIyLjUgOWMtMi4yMSAwLTQgMS43OS00IDQgMCAuODkuMjkgMS43MS43OCAyLjM4QzE3LjMzIDE2LjUgMTYgMTguNTkgMTYgMjFjMCAyLjAzLjk0IDMuODQgMi40MSA1LjAzLTMgMS4wNi03LjQxIDUuNTUtNy40MSAxMy40N2gyM2MwLTcuOTItNC40MS0xMi40MS03LjQxLTEzLjQ3IDEuNDctMS4xOSAyLjQxLTMgMi40MS01LjAzIDAtMi40MS0xLjMzLTQuNS0zLjI4LTUuNjIuNDktLjY3Ljc4LTEuNDkuNzgtMi4zOCAwLTIuMjEtMS43OS00LTQtNHoiIGZpbGw9IiNmZmYiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg==", "wq": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbD0iI2ZmZiIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik04IDEyYTIgMiAwIDEgMS00IDAgMiAyIDAgMSAxIDQgMHptMTYuNS00LjVhMiAyIDAgMSAxLTQgMCAyIDIgMCAxIDEgNCAwek00MSAxMmEyIDIgMCAxIDEtNCAwIDIgMiAwIDEgMSA0IDB6TTE2IDguNWEyIDIgMCAxIDEtNCAwIDIgMiAwIDEgMSA0IDB6TTMzIDlhMiAyIDAgMSAxLTQgMCAyIDIgMCAxIDEgNCAweiIvPjxwYXRoIGQ9Ik05IDI2YzguNS0xLjUgMjEtMS41IDI3IDBsMi0xMi03IDExVjExbC01LjUgMTMuNS0zLTE1LTMgMTUtNS41LTE0VjI1TDcgMTRsMiAxMnoiIHN0cm9rZS1saW5lY2FwPSJidXR0Ii8+PHBhdGggZD0iTTkgMjZjMCAyIDEuNSAyIDIuNSA0IDEgMS41IDEgMSAuNSAzLjUtMS41IDEtMS41IDIuNS0xLjUgMi41LTEuNSAxLjUuNSAyLjUuNSAyLjUgNi41IDEgMTYuNSAxIDIzIDAgMCAwIDEuNS0xIDAtMi41IDAgMCAuNS0xLjUtMS0yLjUtLjUtMi41LS41LTIgLjUtMy41IDEtMiAyLjUtMiAyLjUtNC04LjUtMS41LTE4LjUtMS41LTI3IDB6IiBzdHJva2UtbGluZWNhcD0iYnV0dCIvPjxwYXRoIGQ9Ik0xMS41IDMwYzMuNS0xIDE4LjUtMSAyMiAwTTEyIDMzLjVjNi0xIDE1LTEgMjEgMCIgZmlsbD0ibm9uZSIvPjwvZz48L3N2Zz4=", "wr": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NSIgaGVpZ2h0PSI0NSI+PGcgZmlsbD0iI2ZmZiIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik05IDM5aDI3di0zSDl2M3ptMy0zdi00aDIxdjRIMTJ6bS0xLTIyVjloNHYyaDVWOWg1djJoNVY5aDR2NSIgc3Ryb2tlLWxpbmVjYXA9ImJ1dHQiLz48cGF0aCBkPSJNMzQgMTRsLTMgM0gxNGwtMy0zIi8+PHBhdGggZD0iTTMxIDE3djEyLjVIMTRWMTciIHN0cm9rZS1saW5lY2FwPSJidXR0IiBzdHJva2UtbGluZWpvaW49Im1pdGVyIi8+PHBhdGggZD0iTTMxIDI5LjVsMS41IDIuNWgtMjBsMS41LTIuNSIvPjxwYXRoIGQ9Ik0xMSAxNGgyMyIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIvPjwvZz48L3N2Zz4="};
+const app = document.getElementById('app');
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+let Chess;
+const S = { token: localStorage.getItem('ca_token'), user: null, cleanup: null, sb: null, rt: false, onMe: null, lastGame: null };
+
+// ---------------- helpers ----------------
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtDate = ms => ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'To be announced';
+const fmtTime = ms => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const tc = t => `${Math.round(t.base_sec / 60)}+${t.inc_sec}`;
+const pname = (n, title) => (title ? `<span class="title">${esc(title)}</span>` : '') + esc(n || 'Player');
+const half = r => String(r ?? '').replace('1/2-1/2', '½-½');
+
+async function rpc(fn, args = {}, auth = true) {
+  let r;
+  try {
+    r = await fetch(`${CONFIG.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${fn}`, { method: 'POST',
+      headers: { apikey: CONFIG.SUPABASE_KEY, Authorization: 'Bearer ' + CONFIG.SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(auth ? { p_token: S.token, ...args } : args) });
+  } catch { throw new Error('No connection. Check your internet and try again.'); }
+  const j = await r.json().catch(() => null);
+  if (!r.ok) {
+    const msg = (j && j.message) || 'Something went wrong.';
+    if (/log in again/i.test(msg) && S.token) { logout(true); }
+    throw new Error(msg);
+  }
+  if (j && typeof j === 'object' && !Array.isArray(j) && j.error) throw new Error(j.error);
+  return j;
+}
+function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 4000); }
+function modal(html, red) {
+  const m = document.getElementById('modal');
+  m.innerHTML = `<div class="box ${red ? 'red' : ''}">${html}</div>`; m.hidden = false;
+  return new Promise(res => { m.onclick = e => { const a = e.target.dataset.close; if (a !== undefined) { m.hidden = true; res(a === 'ok' ? (m.querySelector('textarea')?.value ?? true) : null); } }; });
+}
+const confirmBox = (title, text, ok = 'Confirm', danger = false) => modal(`<h2>${esc(title)}</h2><p class="muted">${esc(text)}</p><div class="row" style="justify-content:flex-end">
+  <button class="btn ghost" data-close>Cancel</button><button class="btn ${danger ? 'danger' : ''}" data-close="ok">${esc(ok)}</button></div>`);
+function saveFile(name, text, type) { const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([text], { type })), download: name }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
+function logout(silent) {
+  if (!silent && S.token) rpc('ca_logout').catch(() => {});
+  localStorage.removeItem('ca_token'); S.token = null; S.user = null; location.hash = '#/login'; route();
+}
+function shell(inner, cls = '') {
+  return `<header class="top"><a class="logo" href="#/"><img src="${PIECE.wn}" alt="">${esc(CONFIG.APP_NAME)}</a>
+    <nav>${S.user.role === 'arbiter' ? '<a href="#/arbiter">Arbiter desk</a>' : ''}<a href="#/profile">${esc(S.user.name || 'Profile')}</a><a href="#" data-act="logout">Log out</a></nav></header><main class="wrap ${cls}">${inner}</main>`;
+}
+
+// ---------------- realtime (optional; the app falls back to polling) ----------------
+async function initRealtime() {
+  try {
+    const { createClient } = await import(CDN + '@supabase/supabase-js@2/+esm');
+    S.sb = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  } catch { S.sb = null; }
+}
+function joinChannel(name, onPing) {
+  if (!S.sb) return { send() {}, leave() {} };
+  let ok = false;
+  const ch = S.sb.channel(name, { config: { broadcast: { self: false } } });
+  ch.on('broadcast', { event: 'ping' }, m => { try { onPing(m.payload || {}); } catch {} }).subscribe(st => { ok = st === 'SUBSCRIBED'; S.rt = ok; });
+  return { send(p) { if (ok) try { ch.send({ type: 'broadcast', event: 'ping', payload: p || {} }); } catch {} },
+           leave() { try { S.sb.removeChannel(ch); } catch {} } };
+}
+
+// ---------------- Swiss pairing (runs in the arbiter's browser) ----------------
+function pairRound(players) {
+  const sorted = [...players].sort((a, b) => b.score - a.score || b.rating - a.rating || a.id - b.id);
+  let bye = null;
+  if (sorted.length % 2) { let i = sorted.length - 1; while (i >= 0 && sorted[i].hadBye) i--; if (i < 0) i = sorted.length - 1; bye = sorted.splice(i, 1)[0]; }
+  const n = sorted.length, used = new Uint8Array(n), partner = new Int32Array(n).fill(-1);
+  let budget = 300000;
+  const cands = i => { const s = sorted[i].score, grp = [], rest = [];
+    for (let j = i + 1; j < n; j++) if (!used[j]) (sorted[j].score === s ? grp : rest).push(j);
+    const k = Math.max(0, Math.floor((grp.length + 1) / 2) - 1); return grp.slice(k).concat(grp.slice(0, k).reverse(), rest); };
+  function solve(from, rematch) {
+    let i = from; while (i < n && used[i]) i++; if (i >= n) return true;
+    used[i] = 1;
+    for (const c of cands(i)) { if (!rematch && sorted[i].opponents.has(sorted[c].id)) continue;
+      used[c] = 1; partner[i] = c; if (solve(i + 1, rematch)) return true; used[c] = 0; partner[i] = -1; if (--budget < 0) break; }
+    used[i] = 0; return false;
+  }
+  if (!solve(0, false)) { used.fill(0); partner.fill(-1); budget = Infinity; solve(0, true); }
+  const bal = p => p.colors.reduce((s, c) => s + (c === 'w' ? 1 : -1), 0), pairs = [];
+  for (let i = 0; i < n; i++) { if (partner[i] < 0) continue;
+    const a = sorted[i], b = sorted[partner[i]], ba = bal(a), bb = bal(b); let aw;
+    if (ba !== bb) aw = ba < bb; else { const la = a.colors.at(-1), lb = b.colors.at(-1); aw = la !== lb ? la === 'b' : pairs.length % 2 === 0; }
+    pairs.push(aw ? { white: a.id, black: b.id } : { white: b.id, black: a.id }); }
+  return { pairs, bye: bye ? bye.id : null };
+}
+
+// ---------------- board ----------------
+const FILES = 'abcdefgh';
+class Board {
+  constructor(el, onMove) { this.el = el; this.onMove = onMove; this.sel = null; this.targets = []; this.s = null;
+    el.addEventListener('pointerdown', e => this.down(e)); el.addEventListener('pointerup', e => this.up(e));
+    el.addEventListener('pointermove', e => this.move(e)); el.addEventListener('pointercancel', () => this.endDrag()); }
+  set(s) { this.s = s; this.chess = new Chess(s.fen); this.sel = null; this.targets = []; this.endDrag(); this.render(); }
+  render() {
+    const { orientation, lastMove } = this.s, c = this.chess, b = c.board(), chk = c.inCheck() ? c.turn() : null; let html = '';
+    for (let row = 0; row < 8; row++) for (let col = 0; col < 8; col++) {
+      const r = orientation === 'w' ? row : 7 - row, f = orientation === 'w' ? col : 7 - col, sq = FILES[f] + (8 - r), p = b[r][f];
+      const cls = ['sq', (r + f) % 2 ? 'd' : 'l'];
+      if (lastMove && (lastMove.slice(0, 2) === sq || lastMove.slice(2, 4) === sq)) cls.push('last');
+      if (this.sel === sq) cls.push('sel'); if (this.targets.includes(sq)) cls.push('tgt', p ? 'occ' : '');
+      if (p && p.type === 'k' && p.color === chk) cls.push('chk');
+      html += `<div class="${cls.join(' ')}" data-sq="${sq}">` + (col === 0 ? `<span class="co r">${8 - r}</span>` : '') + (row === 7 ? `<span class="co f">${FILES[f]}</span>` : '') +
+        (p ? `<img src="${PIECE[p.color + p.type]}" alt="${p.color}${p.type}" draggable="false">` : '') + '</div>';
+    }
+    this.el.innerHTML = html;
+  }
+  sqAt(e) { const t = document.elementFromPoint(e.clientX, e.clientY), d = t && t.closest('.sq'); return d && this.el.contains(d) ? d.dataset.sq : null; }
+  canMove() { return this.s && this.s.movable && this.chess.turn() === this.s.movable; }
+  down(e) {
+    if (!this.canMove() || this.el.querySelector('.promo')) return;
+    const sq = this.sqAt(e); if (!sq) return;
+    if (this.sel && this.targets.includes(sq)) return this.tryMove(this.sel, sq);
+    const p = this.chess.get(sq);
+    if (p && p.color === this.s.movable) {
+      this.sel = sq; this.targets = this.chess.moves({ square: sq, verbose: true }).map(m => m.to); this.render();
+      this.dragEl = Object.assign(document.createElement('img'), { src: PIECE[p.color + p.type], className: 'drag' });
+      this.dragEl.style.width = this.dragEl.style.height = this.el.clientWidth / 8 * 1.15 + 'px'; this.dragEl.hidden = true; document.body.appendChild(this.dragEl);
+      this.dragFrom = sq; this.dragStart = [e.clientX, e.clientY];
+    } else { this.sel = null; this.targets = []; this.render(); }
+  }
+  move(e) {
+    if (!this.dragEl) return;
+    if (this.dragEl.hidden && Math.hypot(e.clientX - this.dragStart[0], e.clientY - this.dragStart[1]) < 6) return;
+    if (this.dragEl.hidden) { this.dragEl.hidden = false; const im = this.el.querySelector(`[data-sq="${this.dragFrom}"] img`); if (im) im.style.opacity = .25; }
+    this.dragEl.style.left = e.clientX + 'px'; this.dragEl.style.top = e.clientY + 'px';
+  }
+  up(e) { if (!this.dragEl) return; const dragged = !this.dragEl.hidden, from = this.dragFrom; this.endDrag(); if (!dragged) return;
+    const sq = this.sqAt(e); if (sq && this.targets.includes(sq)) this.tryMove(from, sq); else this.render(); }
+  endDrag() { if (this.dragEl) { this.dragEl.remove(); this.dragEl = null; } }
+  tryMove(from, to) {
+    const p = this.chess.get(from);
+    if (p.type === 'p' && (to[1] === '8' || to[1] === '1')) {
+      const d = document.createElement('div'); d.className = 'promo';
+      d.innerHTML = '<div>' + ['q', 'r', 'b', 'n'].map(t => `<img data-p="${t}" src="${PIECE[p.color + t]}" alt="${t}">`).join('') + '</div>';
+      d.addEventListener('pointerdown', ev => { ev.stopPropagation(); const t = ev.target.dataset.p; d.remove(); if (t) this.onMove({ from, to, promotion: t }); else { this.sel = null; this.targets = []; this.render(); } });
+      this.el.appendChild(d);
+    } else this.onMove({ from, to });
+  }
+}
+
+// ---------------- proctoring (camera, microphone, on-device face check) ----------------
+class Proctor {
+  constructor({ gameId, videoEl, onStatus }) { Object.assign(this, { gameId, videoEl, onStatus });
+    this.status = { camera: false, mic: false, face: null, ai: 'loading' }; this.timers = []; this.last = {}; this.stopped = false; }
+  async start() {
+    this.stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: true });
+    this.videoEl.srcObject = this.stream; this.videoEl.muted = true; await this.videoEl.play().catch(() => {});
+    const [v] = this.stream.getVideoTracks(), [a] = this.stream.getAudioTracks();
+    this.status.camera = !!v; this.status.mic = !!a;
+    if (!v || !a) throw new Error('Both camera and microphone are required.');
+    v.addEventListener('ended', () => this.lost('camera_off', 'camera')); a.addEventListener('ended', () => this.lost('mic_off', 'mic'));
+    this.onVis = () => { if (document.hidden) this.event('tab_hidden'); }; this.onBlur = () => { if (!document.hidden) this.event('window_blur'); };
+    document.addEventListener('visibilitychange', this.onVis); window.addEventListener('blur', this.onBlur);
+    this.canvas = Object.assign(document.createElement('canvas'), { width: 240, height: 180 });
+    this.send('proctor_started', navigator.userAgent.slice(0, 150), true);
+    this.timers.push(setInterval(() => this.send('snapshot', '', true), CONFIG.SNAPSHOT_SEC * 1000));
+    this.watchAudio(a); this.loadFaceAI(); this.push();
+  }
+  push() { this.onStatus && this.onStatus({ ...this.status }); }
+  lost(type, key) { this.status[key] = false; this.push(); this.send(type, 'track ended', false); }
+  event(type, detail = '') { const now = Date.now(); if (now - (this.last[type] || 0) < 15000) return; this.last[type] = now; this.send(type, detail, true); }   // one per 15s per type
+  shot() { if (!this.status.camera || this.videoEl.readyState < 2) return null;
+    try { this.canvas.getContext('2d').drawImage(this.videoEl, 0, 0, 240, 180); return this.canvas.toDataURL('image/jpeg', 0.45); } catch { return null; } }
+  send(type, detail, withImage) { if (this.stopped) return;
+    rpc('ca_proctor', { p_game: this.gameId, p_type: type, p_detail: detail || null, p_image: withImage ? this.shot() : null }).catch(() => {}); }
+  watchAudio(track) {
+    try { const ctx = new (window.AudioContext || window.webkitAudioContext)(), an = ctx.createAnalyser(); an.fftSize = 1024;
+      ctx.createMediaStreamSource(new MediaStream([track])).connect(an); const buf = new Float32Array(an.fftSize); let loud = 0; this.audioCtx = ctx;
+      this.timers.push(setInterval(() => { an.getFloatTimeDomainData(buf); const rms = Math.sqrt(buf.reduce((s, x) => s + x * x, 0) / buf.length);
+        loud = rms > 0.06 ? loud + 1 : Math.max(0, loud - 1); if (loud >= 6) { loud = 0; this.event('voice_detected', 'level ' + rms.toFixed(2)); } }, 500));
+    } catch {}
+  }
+  async loadFaceAI() {
+    try {
+      const base = CDN + '@mediapipe/tasks-vision@1.2.2';
+      const vision = await import(base + '/vision_bundle.mjs');
+      const files = await vision.FilesetResolver.forVisionTasks(base + '/wasm');
+      const det = await vision.FaceDetector.createFromOptions(files, { baseOptions: { delegate: 'CPU',
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite' },
+        runningMode: 'VIDEO', minDetectionConfidence: 0.5 });
+      this.status.ai = 'on'; this.push(); let missing = 0, many = 0;
+      this.timers.push(setInterval(() => {
+        if (this.videoEl.readyState < 2 || document.hidden) return;
+        let n; try { n = det.detectForVideo(this.videoEl, performance.now()).detections.length; } catch { return; }
+        missing = n === 0 ? missing + 1 : 0; many = n > 1 ? many + 1 : 0;
+        const face = n === 1 ? 'ok' : n === 0 ? 'none' : 'many'; if (face !== this.status.face) { this.status.face = face; this.push(); }
+        if (missing >= 4) { missing = 0; this.event('no_face'); } if (many >= 2) { many = 0; this.event('multiple_faces', n + ' faces'); }
+      }, 2000));
+    } catch (err) { this.status.ai = 'off'; this.push(); this.send('ai_unavailable', String(err.message || err).slice(0, 120), false); }
+  }
+  stop() { this.stopped = true; this.timers.forEach(clearInterval);
+    document.removeEventListener('visibilitychange', this.onVis); window.removeEventListener('blur', this.onBlur);
+    if (this.stream) this.stream.getTracks().forEach(t => t.stop()); if (this.audioCtx) this.audioCtx.close().catch(() => {}); }
+}
+
+// ---------------- engine check (Stockfish, runs in the arbiter's browser) ----------------
+class Engine {
+  async init() {
+    try { await this.boot(CDN + 'stockfish@19.0.1/bin/stockfish-19-lite-single'); }          // current Stockfish (WebAssembly)
+    catch { this.quit(); await this.boot(CDN + 'stockfish.js@10.0.2/stockfish', true); }       // older fallback that needs no extra file
+  }
+  async boot(base, single) {
+    const src = await (await fetch(base + '.js')).text();
+    if (src.length < 10000) throw new Error('engine download failed');
+    this.w = new Worker(URL.createObjectURL(new Blob([src], { type: 'application/javascript' })) + (single ? '' : '#' + encodeURIComponent(base + '.wasm')));
+    this.w.onmessage = e => { const l = typeof e.data === 'string' ? e.data : ''; this.onLine && this.onLine(l); };
+    await this.cmd('uci', 'uciok', null, 20000); this.w.postMessage('setoption name MultiPV value 3'); await this.cmd('isready', 'readyok', null, 20000);
+  }
+  cmd(c, token, onInfo, ms = 90000) { return new Promise((res, rej) => { const t = setTimeout(() => rej(new Error('engine timeout')), ms);
+    this.onLine = l => { if (onInfo && l.startsWith('info ')) onInfo(l); if (l.startsWith(token)) { clearTimeout(t); this.onLine = null; res(l); } }; this.w.postMessage(c); }); }
+  async analyze(fen, depth) { const lines = [];
+    this.w.postMessage('position fen ' + fen);
+    await this.cmd('go depth ' + depth, 'bestmove', l => { const m = l.match(/ multipv (\d+) score (cp|mate) (-?\d+).* pv (\S+)/); if (!m) return;
+      lines[m[1] - 1] = { move: m[4], cp: m[2] === 'mate' ? (m[3] > 0 ? 1000 : -1000) : Math.max(-1000, Math.min(1000, +m[3])) }; });
+    return lines.filter(Boolean); }
+  quit() { try { this.w.terminate(); } catch {} }
+}
+const SKIP = 16, clamp01 = x => Math.max(0, Math.min(1, x));
+// Returns one row per player: engine similarity + move-time regularity + proctoring incidents -> 0..100 score.
+async function analyseGame(game, engine) {
+  const c = new Chess(), fens = [START_FEN]; let illegalAt = -1;
+  for (let i = 0; i < game.moves.length; i++) { try { c.move(game.moves[i].san); fens.push(c.fen()); } catch { illegalAt = i; break; } }
+  let evals = null;
+  if (engine && illegalAt < 0 && game.moves.length >= SKIP + 20) {
+    evals = [];
+    for (let i = SKIP; i <= game.moves.length; i++) { const p = new Chess(fens[i]);
+      evals[i] = p.isGameOver() ? { terminal: true, mate: p.isCheckmate() } : { lines: await engine.analyze(fens[i], CONFIG.ENGINE_DEPTH) }; }
+  }
+  const rows = [];
+  for (const [uid, parity] of [[game.white_id, 0], [game.black_id, 1]]) {
+    const reasons = []; let counted = 0, loss = 0, t1 = 0, t3 = 0, acpl = null, r1 = null, r3 = null, es = 0;
+    if (illegalAt >= 0 && illegalAt % 2 === parity) reasons.push(`Illegal move recorded at move ${Math.floor(illegalAt / 2) + 1} (${game.moves[illegalAt].san})`);
+    if (evals) {
+      for (let i = SKIP; i < game.moves.length; i++) { if (i % 2 !== parity) continue;
+        const e = evals[i], nx = evals[i + 1]; if (!e || !e.lines || e.lines.length < 2) continue;
+        const best = e.lines[0].cp; if (Math.abs(best) > 700) continue;
+        const after = nx.terminal ? (nx.mate ? 1000 : 0) : nx.lines.length ? -nx.lines[0].cp : best;
+        counted++; loss += Math.max(0, Math.min(1000, best - after));
+        if (game.moves[i].uci === e.lines[0].move) t1++; if (e.lines.some(l => l.move === game.moves[i].uci)) t3++; }
+      if (counted >= 15) { acpl = loss / counted; r1 = t1 / counted; r3 = t3 / counted;
+        es = clamp01((r1 - 0.50) / 0.35) * 30 + clamp01((25 - acpl) / 20) * 40 + clamp01((r3 - 0.80) / 0.18) * 15;
+        if (r1 >= 0.75) reasons.push(`Played the engine's first choice on ${Math.round(r1 * 100)}% of ${counted} non-forced moves`);
+        if (acpl <= 10) reasons.push(`Average centipawn loss ${acpl.toFixed(1)}`);
+        if (r3 >= 0.95) reasons.push(`${Math.round(r3 * 100)}% of moves in the engine's top three`); }
+    }
+    const times = game.moves.filter((m, i) => i >= SKIP && i % 2 === parity).map(m => m.ms); let cv = null, ts = 0;
+    if (times.length >= 15) { const mean = times.reduce((a, b) => a + b, 0) / times.length, sd = Math.sqrt(times.reduce((a, b) => a + (b - mean) ** 2, 0) / times.length);
+      cv = mean > 0 ? sd / mean : null; if (cv !== null && cv < 0.4 && mean > 1500) { ts = clamp01((0.4 - cv) / 0.3) * 10; reasons.push(`Unusually even move times (variation ${cv.toFixed(2)})`); } }
+    const ev = Object.fromEntries(game.events.filter(e => e.user_id === uid).map(e => [e.type, e.n])), n = k => ev[k] || 0, away = n('tab_hidden') + n('window_blur');
+    const ps = Math.min(60, Math.min(36, away * 6) + Math.min(30, (n('camera_off') + n('mic_off')) * 15) + Math.min(20, n('multiple_faces') * 10) + Math.min(16, n('no_face') * 4) + Math.min(6, n('voice_detected') * 2));
+    if (away) reasons.push(`Left the game window ${away} time${away > 1 ? 's' : ''}`);
+    if (n('camera_off') + n('mic_off')) reasons.push('Camera or microphone was switched off during play');
+    if (n('multiple_faces')) reasons.push(`More than one face on camera (${n('multiple_faces')}x)`);
+    if (n('no_face')) reasons.push(`No face visible on camera (${n('no_face')}x)`);
+    if (n('voice_detected')) reasons.push(`Talking detected (${n('voice_detected')}x)`);
+    const illegal = illegalAt >= 0 && illegalAt % 2 === parity;
+    rows.push({ user_id: uid, counted, acpl, top1: r1, top3: r3, cv, score: illegal ? 100 : Math.round(Math.min(100, es + ts + ps)), reasons });
+  }
+  return rows;
+}
+
+// ---------------- views ----------------
+function viewSetup() {
+  app.innerHTML = `<div class="login"><div class="card"><div class="brand"><img src="${PIECE.bn}" alt=""><h1>${esc(CONFIG.APP_NAME)}</h1></div>
+    <p><b>Almost there.</b> This page is not connected to a database yet.</p>
+    <p class="muted small">Open this file, find the SETTINGS block at the top, and fill in SUPABASE_URL and SUPABASE_KEY from your Supabase project (Project Settings → API). The README has the steps.</p></div></div>`;
+}
+
+function viewLogin() {
+  let reg = false;
+  const draw = () => {
+    app.innerHTML = `<div class="login"><div class="card">
+      <div class="brand"><img src="${PIECE.bn}" alt=""><h1>${esc(CONFIG.APP_NAME)}</h1><div class="muted small">Online tournaments with fair play monitoring</div></div>
+      <div class="seg"><button data-m="0" class="${reg ? '' : 'on'}">Log in</button><button data-m="1" class="${reg ? 'on' : ''}">First time</button></div>
+      <form id="lf"><div style="margin-bottom:.7rem"><label for="ph">Mobile number (with country code)</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required></div>
+        <div style="margin-bottom:.7rem"><label for="pin">${reg ? 'Choose a PIN (6 or more characters)' : 'Your PIN'}</label><input id="pin" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" minlength="6" maxlength="72" required></div>
+        ${reg ? '<div><label for="pin2">Repeat the PIN</label><input id="pin2" type="password" autocomplete="new-password" minlength="6" maxlength="72" required></div>' : ''}
+        <p class="err" id="le"></p><button class="btn block">${reg ? 'Set my PIN and enter' : 'Log in'}</button></form>
+      <p class="muted small center" style="margin:1rem 0 0">${reg ? 'Use the mobile number you gave on the entry form. Only numbers approved by the organiser can enter.' : 'Only numbers approved by the organiser can log in. Forgot your PIN? Ask the organiser to reset it.'}</p></div></div>`;
+    app.querySelectorAll('[data-m]').forEach(b => (b.onclick = () => { reg = b.dataset.m === '1'; draw(); }));
+    const $ = id => document.getElementById(id);
+    $('lf').onsubmit = async e => {
+      e.preventDefault(); $('le').textContent = '';
+      let phone = $('ph').value.replace(/[\s\-()]/g, ''); if (phone && !phone.startsWith('+')) phone = '+' + phone;
+      if (reg && $('pin').value !== $('pin2').value) { $('le').textContent = 'The two PINs do not match.'; return; }
+      try {
+        const r = await rpc('ca_login', { p_phone: phone, p_pin: $('pin').value, p_register: reg }, false);
+        S.token = r.token; S.user = r.user; localStorage.setItem('ca_token', r.token);
+        location.hash = r.user.profileComplete ? '#/' : '#/profile'; route();
+      } catch (err) { $('le').textContent = err.message; }
+    };
+  };
+  draw();
+}
+
+function viewProfile() {
+  const u = S.user, first = !u.profileComplete;
+  app.innerHTML = shell(`<div class="card" style="max-width:560px;margin:0 auto">
+    <h1>${first ? 'Complete your registration' : 'Your profile'}</h1>
+    <p class="muted">${first ? 'One short step, then you can enter tournaments.' : 'These details appear on pairings and results.'} Login number: ${esc(u.phone)}</p>
+    <form id="pf"><div style="margin-bottom:.75rem"><label>Full name</label><input name="name" required minlength="2" maxlength="60" value="${esc(u.name)}" autocomplete="name"></div>
+    <div class="grid2">
+      <div><label>Country / federation</label><input name="country" maxlength="40" value="${esc(u.country)}" autocomplete="country-name"></div>
+      <div><label>Title</label><select name="title">${['', 'GM', 'IM', 'FM', 'CM', 'WGM', 'WIM', 'WFM', 'WCM', 'NM'].map(t => `<option ${u.title === t ? 'selected' : ''} value="${t}">${t || 'None'}</option>`).join('')}</select></div>
+      <div><label>Rating (FIDE or national)</label><input name="rating" type="number" min="0" max="3500" value="${u.rating || ''}"></div>
+      <div><label>FIDE ID (optional)</label><input name="fide" maxlength="20" inputmode="numeric" value="${esc(u.fideId)}"></div>
+    </div><p class="err" id="pe"></p><button class="btn">${first ? 'Finish registration' : 'Save'}</button></form></div>
+    ${!first && u.role !== 'arbiter' ? `<div class="card" style="max-width:560px;margin:0 auto"><h2>Organiser access</h2><p class="muted small">Organisers only: enter the private arbiter code to manage tournaments.</p>
+      <form id="af" class="row"><input id="ac" type="password" placeholder="Arbiter code" style="flex:1;min-width:10rem" autocomplete="off"><button class="btn ghost">Unlock</button></form><p class="err" id="ae"></p></div>` : ''}`);
+  document.getElementById('pf').onsubmit = async e => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+    try { S.user = (await rpc('ca_profile', { p_name: f.name, p_country: f.country, p_title: f.title, p_rating: parseInt(f.rating) || 0, p_fide: f.fide })).user; toast('Saved'); location.hash = '#/'; }
+    catch (err) { document.getElementById('pe').textContent = err.message; } };
+  const af = document.getElementById('af');
+  if (af) af.onsubmit = async e => { e.preventDefault();
+    try { S.user = (await rpc('ca_claim_arbiter', { p_code: document.getElementById('ac').value })).user; toast('Arbiter desk unlocked'); location.hash = '#/arbiter'; }
+    catch (err) { document.getElementById('ae').textContent = err.message; } };
+}
+
+const statusPill = t => t.status === 'running' ? `<span class="pill live">Live · round ${t.current_round}/${t.rounds}</span>` : t.status === 'finished' ? '<span class="pill done">Finished</span>' : '<span class="pill">Registration open</span>';
+
+async function viewHome() {
+  app.innerHTML = shell('<p class="muted">Loading…</p>');
+  const [list, me] = await Promise.all([rpc('ca_tournaments'), rpc('ca_me')]);
+  if (location.hash && location.hash !== '#/') return;
+  app.innerHTML = shell(`
+    ${me.gameId ? `<div class="banner"><div><b>Your game is in progress.</b><div class="small">Your clock may be running.</div></div><a class="btn" href="#/g/${me.gameId}">Go to board</a></div>` : ''}
+    <div class="row spread" style="margin-bottom:.8rem"><h1>Tournaments</h1>${S.user.role === 'arbiter' ? '<a class="btn" href="#/arbiter">New tournament</a>' : ''}</div>
+    ${list.length ? list.map(t => `<a class="card t-card" href="#/t/${t.id}"><div class="row spread"><b>${esc(t.name)}</b>${statusPill(t)}</div>
+      <div class="meta"><span>Swiss · ${t.rounds} rounds</span><span>${tc(t)}</span><span>${t.players} players</span><span>${fmtDate(t.starts_at)}</span>
+      ${t.my_status === 'active' ? '<span style="color:var(--accent);font-weight:600">You are registered</span>' : ''}${t.my_status === 'disqualified' ? '<span style="color:var(--danger);font-weight:600">Disqualified</span>' : ''}</div></a>`).join('')
+      : '<div class="card muted">No tournaments yet.</div>'}`);
+}
+
+function buildPgn(ex) {
+  const clk = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+  const tag = (k, v) => `[${k} "${String(v ?? '?').replace(/"/g, "'")}"]`;
+  return ex.games.filter(g => g.black && g.status === 'finished').map(g => [tag('Event', ex.tournament.name), tag('Site', CONFIG.APP_NAME + ' (online)'),
+    tag('Date', new Date(g.starts_at).toISOString().slice(0, 10).replace(/-/g, '.')), tag('Round', g.round), tag('Board', g.board), tag('White', g.white), tag('Black', g.black),
+    tag('Result', g.result), tag('WhiteElo', g.white_rating || '?'), tag('BlackElo', g.black_rating || '?'), tag('TimeControl', `${ex.tournament.base_sec}+${ex.tournament.inc_sec}`), tag('Termination', g.termination)].join('\n') +
+    '\n\n' + g.moves.map((m, i) => `${i % 2 ? '' : i / 2 + 1 + '. '}${m.san} {[%clk ${clk(m.clk)}]}`).join(' ') + (g.moves.length ? ' ' : '') + g.result + '\n').join('\n');
+}
+function buildCsv(ex) {
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`, iso = ms => ms ? new Date(ms).toISOString() : '';
+  let out = 'SECTION,Games\nRound,Board,White,White rating,Black,Black rating,Result,Winner,Loser,Termination,Moves,Started (UTC),Ended (UTC)\n';
+  for (const g of ex.games) { const win = g.result === '1-0' ? g.white : g.result === '0-1' ? g.black : '', lose = g.result === '1-0' ? g.black : g.result === '0-1' ? g.white : '';
+    out += [g.round, g.board, q(g.white), g.white_rating, q(g.black || 'BYE'), g.black_rating ?? '', g.result || 'in progress', q(win), q(lose || ''), q(g.termination), Math.ceil(g.moves.length / 2), iso(g.starts_at), iso(g.ended_at)].join(',') + '\n'; }
+  out += '\nSECTION,Final standings\nRank,Name,Title,Rating,Country,Points,Buchholz,Wins,Games,Status\n';
+  for (const s of ex.standings) out += [s.rank, q(s.name), q(s.title), s.rating, q(s.country), s.points, s.buchholz, s.wins, s.played, s.status].join(',') + '\n';
+  return out;
+}
+
+async function viewTournament(id) {
+  let tab = 'standings', round = 0, filter = '', timer, autoTimer = null, busy = false;
+  const autoKey = 'ca_auto_' + id, here = () => location.hash.startsWith('#/t/' + id);
+  const chan = joinChannel('t' + id, () => load().catch(() => {}));
+  app.innerHTML = shell('<p class="muted">Loading…</p>');
+  async function startRound() {
+    const d = await rpc('ca_round_data', { p_id: id });
+    if (d.liveGames) throw new Error('Games are still in progress.');
+    if (d.players.length < 2) throw new Error('At least 2 active players are needed.');
+    const { pairs, bye } = pairRound(d.players.map(p => ({ ...p, opponents: new Set(p.opponents) })));
+    await rpc('ca_start_round', { p_id: id, p_pairs: pairs, p_bye: bye, p_delay_sec: CONFIG.START_DELAY_SEC });
+    chan.send({ k: 'round' });
+  }
+  async function load() {
+    const d = await rpc('ca_tournament', { p_id: id }), t = d.tournament, arb = S.user.role === 'arbiter';
+    if (!round || round > t.current_round) round = t.current_round;
+    const games = tab === 'pairings' && t.current_round ? await rpc('ca_pairings', { p_id: id, p_round: round }) : [];
+    if (!here()) return;
+    const auto = arb && localStorage.getItem(autoKey) === '1';
+    // "Run rounds automatically": while the arbiter keeps this page open, the next round starts after the break.
+    if (auto && t.status === 'running' && !t.liveGames && !autoTimer && !busy) {
+      autoTimer = setTimeout(async () => { autoTimer = null; busy = true;
+        try { if (t.current_round >= t.rounds) await rpc('ca_finish_tournament', { p_id: id }); else await startRound(); } catch (e) { toast(e.message); }
+        busy = false; load().catch(() => {}); }, CONFIG.BREAK_SEC * 1000);
+    }
+    const f = filter.toLowerCase();
+    const head = `<div class="card"><div class="row spread"><h1>${esc(t.name)}</h1>${statusPill(t)}</div>${t.description ? `<p>${esc(t.description)}</p>` : ''}
+      <div class="meta"><span>Swiss · ${t.rounds} rounds</span><span>Time control ${tc(t)}</span><span>${t.players} players</span><span>Starts: ${fmtDate(t.starts_at)}</span>
+        <span>${t.proctoring ? 'Camera and microphone required' : 'No proctoring'}</span>${t.status === 'running' ? `<span>${t.liveGames} game${t.liveGames === 1 ? '' : 's'} in play</span>` : ''}</div>
+      <div class="row" style="margin-top:.9rem">
+        ${d.myGameId ? `<a class="btn" href="#/g/${d.myGameId}">Go to my board</a>` : ''}
+        ${d.entry?.status === 'disqualified' ? '<span class="pill bad">You were disqualified</span>'
+          : t.status === 'open' ? (d.entry?.status === 'active' ? '<span class="pill live">You are registered</span><button class="btn ghost" data-act="withdraw">Withdraw</button>' : '<button class="btn" data-act="register">Register for this tournament</button>')
+          : t.status === 'running' && d.entry?.status === 'active' ? '<button class="btn ghost" data-act="withdraw">Withdraw</button>' : ''}
+        ${arb && t.status === 'open' ? '<button class="btn" data-act="start">Start tournament</button>' : ''}
+        ${arb && t.status === 'running' && !t.liveGames && t.current_round < t.rounds ? `<button class="btn" data-act="start">Start round ${t.current_round + 1} now</button>` : ''}
+        ${arb && t.status === 'running' && !t.liveGames ? '<button class="btn ghost" data-act="finish">End tournament</button>' : ''}
+        ${t.current_round ? '<button class="btn ghost" data-act="csv">Results (CSV)</button><button class="btn ghost" data-act="pgn">All games (PGN)</button>' : ''}
+      </div>
+      ${arb && t.status !== 'finished' ? `<label class="row small" style="margin:.8rem 0 0;gap:.4rem"><input type="checkbox" id="auto" ${auto ? 'checked' : ''}> Run rounds automatically while I keep this page open (${CONFIG.BREAK_SEC}s break between rounds)</label>` : ''}
+      ${auto && autoTimer ? '<p class="small" style="margin:.4rem 0 0"><b>Next step starts automatically in under a minute.</b></p>' : ''}</div>`;
+    let body;
+    if (tab === 'standings') {
+      const rows = d.standings.filter(p => !f || (p.name || '').toLowerCase().includes(f)).slice(0, 500);
+      body = `<div class="tablewrap"><table><thead><tr><th>#</th><th>Player</th><th>Rtg</th><th>Fed</th><th class="right">Pts</th><th class="right">BH</th><th class="right">W</th>${arb ? '<th></th>' : ''}</tr></thead><tbody>
+        ${rows.map(p => `<tr class="${p.status === 'disqualified' ? 'dq' : ''} ${p.id === S.user.id ? 'me' : ''}"><td class="num">${p.status === 'disqualified' ? 'DQ' : p.rank}</td><td class="name">${pname(p.name, p.title)}${p.status === 'withdrawn' ? ' <span class="muted small">(withdrawn)</span>' : ''}</td>
+          <td class="num">${p.rating || '-'}</td><td>${esc(p.country)}</td><td class="right num"><b>${p.points}</b></td><td class="right num">${p.buchholz}</td><td class="right num">${p.wins}</td>
+          ${arb ? `<td class="right">${p.status === 'disqualified' ? '<span class="pill bad">Disqualified</span>' : `<button class="btn sm ghost" data-act="dq" data-uid="${p.id}" data-name="${esc(p.name)}">Disqualify</button>`}</td>` : ''}</tr>`).join('')}
+        </tbody></table></div>${!d.standings.length ? '<p class="muted">No players yet.</p>' : ''}`;
+    } else {
+      const rows = games.filter(g => !f || (g.white + ' ' + (g.black || '')).toLowerCase().includes(f));
+      body = `<div class="row" style="margin-bottom:.6rem"><label style="margin:0">Round</label><select id="rsel" style="width:auto">${Array.from({ length: t.current_round }, (_, i) => `<option ${i + 1 === round ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></div>
+        <div class="tablewrap"><table><thead><tr><th>Bd</th><th>White</th><th class="center">Result</th><th>Black</th><th></th></tr></thead><tbody>
+        ${rows.map(g => `<tr class="${g.white_id === S.user.id || g.black_id === S.user.id ? 'me' : ''}"><td class="num">${g.board_no}</td><td class="name">${pname(g.white, g.white_title)} <span class="muted small">${g.white_rating || ''}</span></td>
+          <td class="center num"><b>${g.black_id === null ? 'bye' : g.status === 'active' ? '<span class="pill live">live</span>' : esc(half(g.result))}</b>${g.disputed ? ' <span class="pill bad">disputed</span>' : ''}</td>
+          <td class="name">${g.black_id === null ? '<span class="muted">—</span>' : pname(g.black, g.black_title) + ` <span class="muted small">${g.black_rating || ''}</span>`}</td>
+          <td class="right">${g.black_id !== null && (g.status === 'finished' || arb || g.white_id === S.user.id || g.black_id === S.user.id) ? `<a href="#/g/${g.id}">${g.status === 'active' ? 'Watch' : 'View'}</a>` : ''}</td></tr>`).join('')}
+        </tbody></table></div>${!t.current_round ? '<p class="muted">Pairings appear when the tournament starts.</p>' : ''}`;
+    }
+    const active = document.activeElement?.id === 'flt';
+    app.innerHTML = shell(`${head}<div class="card"><div class="tabs"><button data-tab="standings" class="${tab === 'standings' ? 'on' : ''}">Standings</button><button data-tab="pairings" class="${tab === 'pairings' ? 'on' : ''}">Pairings and results</button></div>
+      <input id="flt" placeholder="Search player" value="${esc(filter)}" style="max-width:260px;margin-bottom:.7rem">${body}</div>`);
+    const fl = document.getElementById('flt'); if (active) { fl.focus(); fl.setSelectionRange(filter.length, filter.length); }
+    fl.oninput = () => { filter = fl.value; clearTimeout(fl.t); fl.t = setTimeout(() => load().catch(() => {}), 300); };
+    const rs = document.getElementById('rsel'); if (rs) rs.onchange = () => { round = +rs.value; load(); };
+    const au = document.getElementById('auto'); if (au) au.onchange = () => { localStorage.setItem(autoKey, au.checked ? '1' : '0'); if (!au.checked) { clearTimeout(autoTimer); autoTimer = null; } load(); };
+    app.querySelectorAll('[data-tab]').forEach(b => (b.onclick = () => { tab = b.dataset.tab; load(); }));
+    app.querySelectorAll('main [data-act]').forEach(b => (b.onclick = () => { b.disabled = true; act(b.dataset.act, b.dataset, t).catch(e => toast(e.message)).finally(() => (b.disabled = false)); }));
+  }
+  async function act(a, ds, t) {
+    if (a === 'csv' || a === 'pgn') { const ex = await rpc('ca_export', { p_id: id });
+      return a === 'csv' ? saveFile(`tournament-${id}-results.csv`, buildCsv(ex), 'text/csv') : saveFile(`tournament-${id}.pgn`, buildPgn(ex), 'application/x-chess-pgn'); }
+    if (a === 'dq') {
+      const msg = await modal(`<h2>Disqualify ${esc(ds.name)}?</h2><p class="muted small">Their current game is forfeited, they are removed from future rounds, and they see this message:</p>
+        <textarea rows="4">You have been disqualified from "${esc(t.name)}" for a breach of the fair play rules. You may appeal to the chief arbiter.</textarea>
+        <div class="row" style="justify-content:flex-end;margin-top:.8rem"><button class="btn ghost" data-close>Cancel</button><button class="btn danger" data-close="ok">Disqualify</button></div>`, true);
+      if (msg === null) return; await rpc('ca_disqualify', { p_tid: id, p_user: +ds.uid, p_message: msg });
+    } else if (a === 'start') { busy = true; try { await startRound(); } finally { busy = false; } }
+    else if (a === 'finish') { if (!(await confirmBox('End the tournament now?', 'No further rounds will be paired.', 'End tournament', true))) return; await rpc('ca_finish_tournament', { p_id: id }); }
+    else if (a === 'withdraw') { if (!(await confirmBox('Withdraw from this tournament?', 'A game in progress will be lost.', 'Withdraw', true))) return; await rpc('ca_withdraw', { p_id: id }); }
+    else if (a === 'register') await rpc('ca_register', { p_id: id });
+    chan.send({ k: 'update' }); await load();
+  }
+  S.cleanup = () => { clearInterval(timer); clearTimeout(autoTimer); chan.leave(); };
+  await load();
+  timer = setInterval(() => { if (document.getElementById('modal').hidden && document.activeElement?.id !== 'flt') load().catch(() => {}); }, 8000);
+}
+
+// ---------------- game ----------------
+async function viewGame(id) {
+  let g, chess, board, proctor = null, tick, poll, view = null, offset = 0, clockAt = 0, pstat = null, sending = false, lastFlagTry = 0, disputed = false, gone = false;
+  const me = S.user.id, myColor = () => (g.white.id === me ? 'w' : g.black.id === me ? 'b' : null), live = () => g.status === 'active';
+  const fmtClock = ms => { ms = Math.max(0, ms); const s = Math.floor(ms / 1000), m = Math.floor(s / 60);
+    return ms < 20000 ? `${m}:${String(s % 60).padStart(2, '0')}.${Math.floor((ms % 1000) / 100)}` : `${m >= 60 ? Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0') : m}:${String(s % 60).padStart(2, '0')}`; };
+  const remaining = c => { if (!live() || g.turn !== c) return g.clock[c]; return g.clock[c] - Math.max(0, Date.now() - Math.max(clockAt, g.startsAt - offset)); };
+  const chan = joinChannel('g' + id, () => refresh());
+
+  // Replays the stored moves with the rules engine. A move or result this device cannot verify is reported to the arbiter.
+  function verify(ng) {
+    const c = new Chess(); let ok = true;
+    for (const m of ng.moves) { try { c.move(m.san); } catch { ok = false; break; } }
+    if (ok && ng.moves.length && c.fen().split(' ').slice(0, 4).join(' ') !== ng.fen.split(' ').slice(0, 4).join(' ')) ok = false;
+    if (ok && ng.status === 'finished') { const t = ng.termination;
+      if ((t === 'checkmate' && !c.isCheckmate()) || (t === 'stalemate' && !c.isStalemate()) || (t === 'insufficient material' && !c.isInsufficientMaterial()) ||
+          (t === 'threefold repetition' && !c.isThreefoldRepetition()) || (t === 'fifty-move rule' && !c.isDraw())) ok = false; }
+    return { ok, chess: ok ? c : new Chess(ng.fen && ng.fen.split(' ').length === 6 ? ng.fen : START_FEN) };
+  }
+  function setGame(ng) {
+    const changed = !g || ng.ply !== g.ply || ng.status !== g.status || ng.drawOffer !== g.drawOffer || ng.ready.w !== g.ready.w || ng.ready.b !== g.ready.b;
+    const wasLive = g && live();
+    g = ng; offset = g.serverNow - Date.now(); clockAt = Date.now();
+    const v = verify(g); chess = v.chess;
+    if (!v.ok && !g.disputed && !disputed && myColor()) { disputed = true; toast('A move in this game could not be verified. The arbiter has been notified.'); rpc('ca_action', { p_game: id, p_action: 'dispute' }).catch(() => {}); }
+    if (wasLive && !live() && proctor) { proctor.stop(); proctor = null; }
+    return changed;
+  }
+  async function refresh() { if (gone || sending) return; try { const ng = await rpc('ca_game', { p_id: id }); if (!gone && !sending && setGame(ng)) render(); } catch {} }
+
+  function strip(c) { const p = c === 'w' ? g.white : g.black;
+    return `<div class="strip"><div class="who">${live() && g.proctoring ? `<span class="dot ${g.ready[c] ? 'ok' : 'bad'}" title="Camera and microphone"></span>` : ''}${pname(p.name, p.title)} <span class="muted small">${p.rating || ''} ${esc(p.country || '')}</span></div><div class="clock" data-clock="${c}"></div></div>`; }
+  function render() {
+    const mc = myColor(), ori = mc || 'w', top = ori === 'w' ? 'b' : 'w', arb = S.user.role === 'arbiter';
+    const res = g.result ? ({ '1-0': 'White wins', '0-1': 'Black wins', '1/2-1/2': 'Draw' }[g.result]) : '';
+    let ml = ''; for (let i = 0; i < g.moves.length; i += 2) ml += `<span class="n">${i / 2 + 1}.</span><span class="mv" data-ply="${i + 1}">${esc(g.moves[i].san)}</span><span class="mv" data-ply="${i + 2}">${esc(g.moves[i + 1]?.san || '')}</span>`;
+    const camWas = document.getElementById('cam');
+    app.innerHTML = shell(`<div class="game"><div>${strip(top)}<div style="position:relative"><div class="board" id="bd"></div><div id="gate"></div></div>${strip(ori)}</div>
+      <div><div class="card">
+        <div class="muted small" style="margin-bottom:.5rem"><a href="#/t/${g.tournamentId}">${esc(g.tournament)}</a> · Round ${g.round} · Board ${g.board}</div>
+        ${g.result ? `<div class="result"><b>${half(g.result)} · ${res}</b><div class="small">by ${esc(g.termination)}</div></div>` : `<div id="status" class="small" style="margin-bottom:.5rem"></div>`}
+        ${g.disputed ? '<p class="small" style="color:var(--danger)"><b>This game is under review by the arbiter.</b></p>' : ''}
+        <div class="moves" id="ml">${ml}</div>
+        ${!live() ? `<div class="row" style="margin-top:.7rem"><button class="btn ghost sm" data-nav="0">⏮</button><button class="btn ghost sm" data-nav="-1">◀</button><button class="btn ghost sm" data-nav="1">▶</button><button class="btn ghost sm" data-nav="end">⏭</button></div>` : ''}
+        ${live() && mc ? `<div class="row" style="margin-top:.8rem" id="acts"></div>` : ''}
+        ${arb && !live() ? `<div class="row small" style="margin-top:.8rem"><span class="muted">Arbiter: set result</span>${['1-0', '1/2-1/2', '0-1'].map(r => `<button class="btn ghost sm" data-res="${r}">${half(r)}</button>`).join('')}</div>` : ''}
+      </div>
+      ${live() && mc && g.proctoring ? `<div class="card proctor"><h2>Fair play monitoring</h2><div class="row"><video id="cam" playsinline muted></video><div class="small" id="pstat"></div></div>
+        <p class="muted small" style="margin:.6rem 0 0">Stay on this page with your camera and microphone on. Leaving the tab, other people in view, and talking are reported to the arbiter.</p></div>` : ''}
+      </div></div>`, 'g');
+    board = new Board(document.getElementById('bd'), onMove);
+    const cam = document.getElementById('cam'); if (proctor && cam) { cam.srcObject = proctor.stream; cam.muted = true; cam.play().catch(() => {}); proctor.videoEl = cam; }
+    paint(); wire(); gate(); clocks(); pstatus();
+    const m = document.getElementById('ml'); m.scrollTop = m.scrollHeight;
+  }
+  function paint() {
+    const mc = myColor(), n = g.moves.length, at = view ?? n;
+    const fen = at === 0 ? START_FEN : at === n ? chess.fen() : g.moves[at - 1].fen, last = at ? g.moves[at - 1]?.uci : null;
+    board.set({ fen, orientation: mc || 'w', lastMove: last, movable: live() && view === null && mc && (!g.proctoring || g.ready[mc]) && !sending ? mc : null });
+    document.querySelectorAll('#ml .mv').forEach(e => e.classList.toggle('cur', +e.dataset.ply === at));
+  }
+  async function onMove(mv) {
+    if (sending) return; let m;
+    try { m = chess.move({ from: mv.from, to: mv.to, promotion: mv.promotion || 'q' }); } catch { return paint(); }
+    const end = chess.isCheckmate() ? 'checkmate' : chess.isStalemate() ? 'stalemate' : chess.isInsufficientMaterial() ? 'insufficient material' : chess.isThreefoldRepetition() ? 'threefold repetition' : chess.isDraw() ? 'fifty-move rule' : null;
+    const uci = m.from + m.to + (m.promotion || ''), fen = chess.fen();
+    // show the move at once, then confirm with the server
+    g.moves.push({ san: m.san, uci, fen, clk: 0 }); g.ply++; g.fen = fen; g.clock[g.turn] = remaining(g.turn); g.turn = g.turn === 'w' ? 'b' : 'w'; clockAt = Date.now();
+    sending = true; render();
+    try { const ng = await rpc('ca_move', { p_game: id, p_ply: g.ply, p_san: m.san, p_uci: uci, p_fen: fen, p_end: end }); sending = false; setGame(ng); chan.send({}); }
+    catch (err) { sending = false; toast(err.message); try { setGame(await rpc('ca_game', { p_id: id })); } catch {} }
+    if (!gone) render();
+  }
+  async function action(a) { try { const ng = await rpc('ca_action', { p_game: id, p_action: a }); setGame(ng); chan.send({}); render(); } catch (e) { toast(e.message); } }
+  function wire() {
+    const mc = myColor(), acts = document.getElementById('acts');
+    if (acts) {
+      acts.innerHTML = g.drawOffer && g.drawOffer !== mc ? `<b>Your opponent offers a draw.</b><button class="btn sm" data-g="accept">Accept</button><button class="btn ghost sm" data-g="decline">Decline</button>`
+        : `<button class="btn ghost sm" data-g="offer" ${g.drawOffer === mc ? 'disabled' : ''}>${g.drawOffer === mc ? 'Draw offered' : 'Offer draw'}</button><button class="btn ghost sm" data-g="resign">Resign</button>`;
+      acts.querySelectorAll('[data-g]').forEach(b => (b.onclick = async () => { const a = b.dataset.g;
+        if (a === 'resign' && !(await confirmBox('Resign this game?', 'Your opponent will be awarded the win.', 'Resign', true))) return; action(a); }));
+    }
+    document.querySelectorAll('[data-nav]').forEach(b => (b.onclick = () => { const n = g.moves.length, cur = view ?? n, a = b.dataset.nav;
+      view = a === '0' ? 0 : a === 'end' ? n : Math.max(0, Math.min(n, cur + +a)); paint(); }));
+    document.querySelectorAll('#ml .mv').forEach(e => (e.onclick = () => { if (!live() && e.textContent) { view = +e.dataset.ply; paint(); } }));
+    document.querySelectorAll('[data-res]').forEach(b => (b.onclick = async () => { if (!(await confirmBox(`Set the result to ${half(b.dataset.res)}?`, 'This overrides the recorded result.', 'Set result'))) return;
+      try { await rpc('ca_set_result', { p_game: id, p_result: b.dataset.res }); setGame(await rpc('ca_game', { p_id: id })); render(); } catch (e) { toast(e.message); } }));
+  }
+  function gate() {
+    const el = document.getElementById('gate'), mc = myColor(); if (!el) return;
+    if (!live() || !mc || !g.proctoring || proctor) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="gate"><div><h2>Fair play check</h2>
+      <ul><li>Your camera and microphone must stay on for the whole game.</li><li>Stay on this page. Do not open other tabs or apps.</li><li>You must be alone and clearly visible.</li><li>Webcam snapshots are kept for the arbiters.</li></ul>
+      <button class="btn" id="go">Turn on camera and microphone</button><p class="err" id="ge" style="color:#ffb4ab"></p><p class="small" style="opacity:.8">Your clock runs once the round starts, even before you are ready.</p></div></div>`;
+    document.getElementById('go').onclick = startProctor;
+  }
+  async function startProctor() {
+    const p = new Proctor({ gameId: id, videoEl: document.getElementById('cam'), onStatus: s => { pstat = s; pstatus();
+      if (live() && proctor === p && (!s.camera || !s.mic)) { proctor = null; p.stop(); action('unready'); } } });
+    try { await p.start(); proctor = p; await action('ready'); }
+    catch (err) { p.stop(); const ge = document.getElementById('ge'); if (ge) ge.textContent = err.name === 'NotAllowedError' ? 'Permission was blocked. Allow camera and microphone for this site in your browser settings, then try again.'
+      : err.name === 'NotFoundError' ? 'No camera or microphone was found on this device.' : (err.message || 'Could not start the camera.'); }
+  }
+  function pstatus() { const el = document.getElementById('pstat'); if (!el || !pstat) return; const d = (ok, t) => `<div><span class="dot ${ok ? 'ok' : 'bad'}"></span>${t}</div>`;
+    el.innerHTML = d(pstat.camera, 'Camera') + d(pstat.mic, 'Microphone') + (pstat.ai === 'on' ? d(pstat.face === 'ok', pstat.face === 'many' ? 'More than one face' : pstat.face === 'none' ? 'Face not visible' : 'Face visible')
+      : `<div><span class="dot"></span>${pstat.ai === 'loading' ? 'Starting face check…' : 'Face check unavailable (snapshots still sent)'}</div>`); }
+  function clocks() {
+    for (const c of ['w', 'b']) { const el = document.querySelector(`[data-clock="${c}"]`); if (!el) continue; const ms = remaining(c);
+      el.textContent = fmtClock(ms); el.className = 'clock' + (live() && g.turn === c ? (ms < 20000 ? ' low' : ' run') : ''); }
+    const st = document.getElementById('status');
+    if (st && live()) { const wait = g.startsAt - offset - Date.now(), mc = myColor();
+      st.innerHTML = wait > 0 ? `<b>Round starts in ${Math.ceil(wait / 1000)}s</b>` : mc ? (g.turn === mc ? '<b>Your move</b>' : 'Waiting for your opponent') : `${g.turn === 'w' ? 'White' : 'Black'} to move`; }
+    // a clock reached zero: ask the server (its clock decides) to rule on it
+    if (live() && !sending && remaining(g.turn) <= 0 && Date.now() - lastFlagTry > 1500) { lastFlagTry = Date.now(); rpc('ca_action', { p_game: id, p_action: 'timeout' }).then(ng => { if (!gone && setGame(ng)) { chan.send({}); render(); } }).catch(() => {}); }
+  }
+  app.innerHTML = shell('<p class="muted">Loading…</p>');
+  S.cleanup = () => { gone = true; clearInterval(tick); clearTimeout(poll); chan.leave(); if (proctor) proctor.stop(); };
+  try { setGame(await rpc('ca_game', { p_id: id })); } catch (err) { app.innerHTML = shell(`<div class="card"><p>${esc(err.message)}</p><a href="#/">Back to tournaments</a></div>`); return; }
+  S.lastGame = id; render();
+  tick = setInterval(clocks, 100);
+  const loop = () => { poll = setTimeout(async () => { if (live()) await refresh(); if (!gone) loop(); }, S.rt ? 10000 : 2500); }; loop();
+}
+
+// ---------------- arbiter ----------------
+async function viewArbiter() {
+  let status = 'open', running = false;
+  async function load() {
+    const [o, cases] = await Promise.all([rpc('ca_overview'), rpc('ca_cases', { p_status: status })]);
+    if (location.hash !== '#/arbiter') return;
+    app.innerHTML = shell(`<h1>Arbiter desk</h1>
+      <div class="card stats"><div class="stat"><b>${o.liveGames}</b>games in play</div><div class="stat"><b>${o.openCases}</b>open fair play cases</div>
+        <div class="stat"><b>${o.toAnalyse}</b>games waiting for engine check</div><div class="stat"><b>${o.users}</b>registered players</div><div class="stat"><b>${o.snapshots}</b>webcam snapshots stored</div></div>
+      <div class="card"><div class="row spread"><h2 style="margin:0">Engine check</h2><button class="btn" id="run" ${o.toAnalyse ? '' : 'disabled'}>Check ${o.toAnalyse} finished game${o.toAnalyse === 1 ? '' : 's'}</button></div>
+        <p class="muted small" id="prog" style="margin:.6rem 0 0">Runs in this browser tab. Keep the tab open until it finishes; a long game takes roughly half a minute.</p></div>
+      <div class="card"><h2>Fair play cases</h2>
+        <div class="tabs">${['open', 'confirmed', 'dismissed'].map(s => `<button data-st="${s}" class="${s === status ? 'on' : ''}">${s[0].toUpperCase() + s.slice(1)}</button>`).join('')}</div>
+        ${cases.length ? `<div class="tablewrap"><table><thead><tr><th>Score</th><th>Player</th><th>Event</th><th>Why it was flagged</th><th></th></tr></thead><tbody>
+          ${cases.map(c => `<tr><td class="num"><b>${c.score}</b>/100</td><td class="name">${pname(c.name, c.title)} <span class="muted small">${c.rating || ''}</span></td>
+          <td class="name">${esc(c.tournament)}<div class="muted small">Round ${c.round}, board ${c.board_no}</div></td><td class="name small">${c.reasons.map(esc).join('<br>')}</td><td><a class="btn sm" href="#/case/${c.id}">Review</a></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No cases here.</p>'}
+        <p class="muted small" style="margin-bottom:0">Nobody is disqualified automatically. Flagged games wait here for your decision.</p></div>
+      <div class="card"><h2>New tournament</h2><form id="nt">
+        <div style="margin-bottom:.75rem"><label>Name</label><input name="name" required maxlength="100" placeholder="e.g. Winter Online Open 2026"></div>
+        <div style="margin-bottom:.75rem"><label>Description (optional)</label><textarea name="description" rows="2" maxlength="2000"></textarea></div>
+        <div class="grid2"><div><label>Rounds (Swiss)</label><input name="rounds" type="number" min="1" max="30" value="9"></div>
+          <div><label>Start time (your local time)</label><input name="startsAt" type="datetime-local"></div>
+          <div><label>Minutes per player</label><input name="baseMin" type="number" min="1" max="180" value="10"></div>
+          <div><label>Increment per move (seconds)</label><input name="incSec" type="number" min="0" max="60" value="5"></div>
+          <div><label>Proctoring</label><select name="proctoring"><option value="1">Camera and microphone required</option><option value="">Off</option></select></div>
+        </div><p class="err" id="ne"></p><button class="btn">Create tournament</button></form></div>
+      <div class="card"><h2>Entry list <span class="muted small" id="elc"></span></h2>
+        <p class="muted small">Only these mobile numbers can set a PIN and log in. Paste one player per line: the number, and optionally the name.</p>
+        <form id="ea"><textarea name="lines" rows="4" placeholder="+91 98765 43210  Anand Rao&#10;9876501234  Maria Lopez" required></textarea>
+          <div class="row" style="margin-top:.6rem"><div style="width:9rem"><label>Country code if missing</label><input name="cc" value="+91"></div><button class="btn" style="align-self:flex-end">Add to entry list</button></div></form>
+        <input id="elf" placeholder="Search number or name" style="max-width:260px;margin:1rem 0 .6rem"><div id="el" class="tablewrap"></div></div>
+      <div class="card"><h2>Player support</h2><form id="rp" class="grid2"><div><label>Player's mobile number</label><input name="phone" type="tel" placeholder="+91…" required></div>
+        <div><label>New PIN to give them</label><input name="pin" minlength="6" maxlength="72" required autocomplete="off"></div><div><button class="btn ghost">Reset PIN</button></div></form>
+        <hr style="border:0;border-top:1px solid var(--line);margin:1rem 0"><form id="ps" class="row"><div style="flex:1;min-width:12rem"><label>Free storage: delete the webcam snapshots of tournament number</label><input name="tid" type="number" min="1" required></div><button class="btn ghost">Delete snapshots</button></form></div>`);
+    app.querySelectorAll('[data-st]').forEach(b => (b.onclick = () => { status = b.dataset.st; load(); }));
+    document.getElementById('nt').onsubmit = async e => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+      f.proctoring = !!f.proctoring; f.startsAt = f.startsAt ? new Date(f.startsAt).toISOString() : '';
+      try { const r = await rpc('ca_create_tournament', { p_data: f }); location.hash = '#/t/' + r.id; } catch (err) { document.getElementById('ne').textContent = err.message; } };
+    document.getElementById('rp').onsubmit = async e => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+      try { await rpc('ca_reset_pin', { p_phone: f.phone, p_new_pin: f.pin }); toast('PIN reset. Tell the player their new PIN.'); e.target.reset(); } catch (err) { toast(err.message); } };
+    document.getElementById('ps').onsubmit = async e => { e.preventDefault(); const tid = +new FormData(e.target).get('tid');
+      if (!(await confirmBox('Delete these snapshots?', 'Webcam evidence for this tournament is removed for good. Decide all open cases first.', 'Delete', true))) return;
+      try { const r = await rpc('ca_purge_snaps', { p_tid: tid }); toast(`${r.deleted} snapshots deleted`); load(); } catch (err) { toast(err.message); } };
+    document.getElementById('run').onclick = runCheck;
+    document.getElementById('ea').onsubmit = async e => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+      try { const r = await rpc('ca_allowed_add', { p_lines: f.lines, p_cc: f.cc });
+        if (r.invalid.length) { await modal(`<h2>${r.added} added, ${r.invalid.length} not understood</h2><p class="muted small">These lines have no valid mobile number:</p><p class="small">${r.invalid.map(esc).join('<br>')}</p><div class="right"><button class="btn" data-close="ok">OK</button></div>`); }
+        else toast(`${r.added} number${r.added === 1 ? '' : 's'} on the entry list`);
+        e.target.lines.value = ''; entries(); } catch (err) { toast(err.message); } };
+    document.getElementById('elf').oninput = () => drawEntries();
+    entries();
+  }
+  let list = [];
+  async function entries() { try { list = await rpc('ca_allowed_list'); drawEntries(); } catch {} }
+  function drawEntries() {
+    const el = document.getElementById('el'), f = (document.getElementById('elf')?.value || '').toLowerCase(); if (!el) return;
+    document.getElementById('elc').textContent = `(${list.length} numbers, ${list.filter(x => x.registered).length} have logged in)`;
+    const rows = list.filter(x => !f || (x.phone + ' ' + (x.note || '') + ' ' + (x.name || '')).toLowerCase().includes(f)).slice(0, 300);
+    el.innerHTML = rows.length ? `<table><thead><tr><th>Mobile number</th><th>Note</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td class="num">${esc(x.phone)}</td><td class="name">${esc(x.note || '')}</td>
+      <td>${x.registered ? '<span class="pill live">Logged in</span> ' + esc(x.name || '') : '<span class="pill">Not yet</span>'}</td><td class="right"><button class="btn sm ghost" data-rm="${esc(x.phone)}">Remove</button></td></tr>`).join('')}</tbody></table>` : '<p class="muted">No numbers match.</p>';
+    el.querySelectorAll('[data-rm]').forEach(b => (b.onclick = async () => {
+      if (!(await confirmBox(`Remove ${b.dataset.rm}?`, 'This player will be logged out and cannot log in again until you add the number back.', 'Remove', true))) return;
+      try { await rpc('ca_allowed_remove', { p_phone: b.dataset.rm }); entries(); } catch (err) { toast(err.message); } }));
+  }
+  async function runCheck() {
+    if (running) return; running = true; const prog = () => document.getElementById('prog'), btn = document.getElementById('run'); btn.disabled = true;
+    let engine = null, done = 0, flagged = 0;
+    try { prog().textContent = 'Loading the engine…'; engine = new Engine(); await engine.init(); }
+    catch { engine = null; toast('The engine could not be loaded. Checking camera and window evidence only.'); }
+    try {
+      for (;;) {
+        const q = await rpc('ca_analysis_queue', { p_limit: 5 }); if (!q.length || location.hash !== '#/arbiter') break;
+        for (const game of q) { if (prog()) prog().textContent = `Checking game ${done + 1}… (${flagged} flagged so far)`;
+          const rows = await analyseGame(game, engine);
+          flagged += (await rpc('ca_save_analysis', { p_game: game.id, p_rows: rows, p_threshold: CONFIG.FAIRPLAY_THRESHOLD })).cases; done++; }
+      }
+      toast(`Checked ${done} game${done === 1 ? '' : 's'}; ${flagged} flagged.`);
+    } catch (e) { toast(e.message); }
+    if (engine) engine.quit(); running = false; if (location.hash === '#/arbiter') load();
+  }
+  app.innerHTML = shell('<p class="muted">Loading…</p>'); await load();
+}
+
+async function viewCase(id) {
+  app.innerHTML = shell('<p class="muted">Loading…</p>');
+  const d = await rpc('ca_case', { p_id: id }), c = d.case, a = d.analysis || {}, p = d.player, pct = x => x == null ? '–' : Math.round(x * 100) + '%';
+  const names = { tab_hidden: 'Switched to another tab or app', window_blur: 'Clicked outside the game window', no_face: 'No face on camera', multiple_faces: 'More than one face on camera', camera_off: 'Camera off',
+    mic_off: 'Microphone off', voice_detected: 'Talking detected', ai_unavailable: 'Face check could not run on this device', proctor_started: 'Monitoring started', snapshot: '' };
+  app.innerHTML = shell(`<p><a href="#/arbiter">← All cases</a></p>
+    <div class="card"><div class="row spread"><div><h1>${pname(p.name, p.title)}</h1><div class="muted">${p.rating || 'Unrated'} · ${esc(p.country)} · FIDE ID ${esc(p.fideId || '–')} · ${esc(p.phone)}</div>
+      <div class="muted small">${esc(d.tournament.name)} · <a href="#/g/${c.game_id}">Open the game</a> · Case ${c.status}${d.entryStatus === 'disqualified' ? ' · player is disqualified' : ''}</div></div><div class="score">${c.score}<span class="small">/100</span></div></div>
+      <ul>${c.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>
+    <div class="card"><h2>Move analysis (this game)</h2><div class="stats">
+      <div class="stat"><b>${pct(a.top1)}</b>engine first choice</div><div class="stat"><b>${pct(a.top3)}</b>in engine top three</div><div class="stat"><b>${a.acpl == null ? '–' : a.acpl.toFixed(1)}</b>avg centipawn loss</div>
+      <div class="stat"><b>${a.counted ?? '–'}</b>moves assessed</div><div class="stat"><b>${a.cv == null ? '–' : a.cv.toFixed(2)}</b>move-time variation</div></div>
+      <p class="muted small">Opening moves, forced moves and already-decided positions are left out. Strong players in simple positions can score high honestly, so read this together with the camera evidence and the player's other games.</p>
+      ${d.otherGames.length > 1 ? `<div class="tablewrap"><table><thead><tr><th>Round</th><th>Colour</th><th>Result</th><th>First choice</th><th>Top three</th><th>ACPL</th><th>Score</th><th></th></tr></thead><tbody>
+        ${d.otherGames.map(o => `<tr><td>${o.round}</td><td>${o.is_white ? 'White' : 'Black'}</td><td>${esc(half(o.result))}</td><td>${pct(o.top1)}</td><td>${pct(o.top3)}</td><td>${o.acpl == null ? '–' : o.acpl.toFixed(1)}</td><td>${o.score}</td><td><a href="#/g/${o.game_id}">View</a></td></tr>`).join('')}</tbody></table></div>` : ''}</div>
+    <div class="card"><h2>Monitoring log</h2>${d.events.length ? `<table><tbody>${d.events.map(e => `<tr><td class="num muted">${fmtTime(e.at)}</td><td class="name">${esc(names[e.type] || e.type)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No monitoring events were recorded.</p>'}</div>
+    <div class="card"><h2>Webcam snapshots (${d.snapshots.length})</h2>${d.snapshots.length ? `<div class="snaps">${d.snapshots.map(s => { const flag = !['snapshot', 'proctor_started'].includes(s.reason);
+      return `<figure class="${flag ? 'flag' : ''}"><img loading="lazy" src="${/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(s.image) ? s.image : ''}" alt=""><figcaption>${fmtTime(s.at)}${flag ? ' · ' + esc(names[s.reason] || s.reason) : ''}</figcaption></figure>`; }).join('')}</div>` : '<p class="muted">No snapshots.</p>'}</div>
+    ${c.status === 'open' ? `<div class="card"><h2>Decision</h2><label>Message shown to the player if disqualified</label>
+      <textarea id="msg" rows="3">You have been disqualified from "${esc(d.tournament.name)}" for a breach of the fair play rules (use of outside assistance). You may appeal to the chief arbiter.</textarea>
+      <div class="row" style="margin-top:.8rem"><button class="btn danger" id="dq">Disqualify player</button><button class="btn ghost" id="dm">Dismiss case (no action)</button></div></div>`
+      : `<div class="card muted">Decided ${fmtDate(c.decided_at)}${c.note ? ': ' + esc(c.note) : ''}</div>`}`);
+  const decide = async action => {
+    if (action === 'disqualify' && !(await confirmBox(`Disqualify ${p.name}?`, 'Their current game is forfeited and they are removed from future rounds.', 'Disqualify', true))) return;
+    await rpc('ca_decide', { p_case: id, p_action: action, p_message: action === 'disqualify' ? document.getElementById('msg').value : null });
+    toast(action === 'disqualify' ? 'Player disqualified' : 'Case dismissed'); location.hash = '#/arbiter'; };
+  const dq = document.getElementById('dq'); if (dq) { dq.onclick = () => decide('disqualify').catch(e => toast(e.message)); document.getElementById('dm').onclick = () => decide('dismiss').catch(e => toast(e.message)); }
+}
+
+// ---------------- background check: new round started? any notice for me? ----------------
+async function heartbeat() {
+  if (!S.token || !S.user) return;
+  try {
+    const me = await rpc('ca_me'); S.user = me.user;
+    const dq = me.notices.find(n => n.kind === 'disqualified'), info = me.notices.filter(n => n.kind !== 'disqualified');
+    if (info.length) toast(info[info.length - 1].message);
+    if (me.notices.length && document.getElementById('modal').hidden) {
+      if (dq) await modal(`<h2 style="color:var(--danger)">You have been disqualified</h2><p>${esc(dq.message)}</p><div class="right"><button class="btn" data-close="ok">I understand</button></div>`, true);
+      rpc('ca_notices_read').catch(() => {});
+    }
+    if (me.gameId && me.gameId !== S.lastGame) { S.lastGame = me.gameId; toast('Your round is starting. Opening your board…'); location.hash = '#/g/' + me.gameId; }
+  } catch {}
+}
+
+// ---------------- router ----------------
+async function route() {
+  if (S.cleanup) { S.cleanup(); S.cleanup = null; }
+  const h = location.hash || '#/';
+  if (!CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_KEY) return viewSetup();
+  if (!S.token) return viewLogin();
+  if (!S.user) { try { S.user = (await rpc('ca_me')).user; } catch (e) { if (S.token) app.innerHTML = `<p style="padding:2rem">${esc(e.message)} <a href="">Retry</a></p>`; return; } }
+  if (!S.user.profileComplete && h !== '#/profile') { location.hash = '#/profile'; return; }
+  let m;
+  try {
+    if (h === '#/login') location.hash = '#/';
+    else if (h === '#/profile') viewProfile();
+    else if ((m = h.match(/^#\/t\/(\d+)/))) await viewTournament(+m[1]);
+    else if ((m = h.match(/^#\/g\/(\d+)/))) await viewGame(+m[1]);
+    else if (h === '#/arbiter' && S.user.role === 'arbiter') await viewArbiter();
+    else if ((m = h.match(/^#\/case\/(\d+)/)) && S.user.role === 'arbiter') await viewCase(+m[1]);
+    else await viewHome();
+  } catch (err) { if (S.token && S.user) app.innerHTML = shell(`<div class="card"><p>${esc(err.message)}</p><a href="#/">Back to tournaments</a></div>`); }
+}
+document.addEventListener('click', e => { if (e.target.dataset && e.target.dataset.act === 'logout') { e.preventDefault(); logout(); } });
+window.addEventListener('hashchange', route);
+(async () => {
+  document.title = CONFIG.APP_NAME;
+  try { ({ Chess } = await import(CDN + 'chess.js@1.4.0/+esm')); }
+  catch { app.innerHTML = '<p style="padding:2rem;font-family:system-ui">Could not load the chess rules library. Check your internet connection and reload.</p>'; return; }
+  if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_KEY) await Promise.race([initRealtime(), new Promise(r => setTimeout(r, 4000))]);
+  await route(); heartbeat();
+  (function hb() { setTimeout(async () => { await heartbeat(); hb(); }, S.rt ? 20000 : 6000); })();
+})();
+</script>
+</body>
+</html>
